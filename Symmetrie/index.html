@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Symmetrie – Grundschule</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+
+html { overflow:hidden; height:100%; touch-action:none; }
+body {
+  background:#eef0f3; color:#2c3540;
+  font-family:'Segoe UI',system-ui,sans-serif;
+  height:100%; display:flex; flex-direction:column;
+  overflow:hidden; user-select:none; touch-action:none;
+}
+
+/* ── Toolbar ── */
+#toolbar {
+  display:flex; align-items:center; flex-wrap:wrap; gap:10px;
+  padding:7px 14px; background:#fff;
+  border-bottom:1px solid #dde1e8;
+  box-shadow:0 1px 6px rgba(0,0,0,.07);
+  z-index:20; min-height:48px; flex-shrink:0;
+}
+@media (max-height:820px) {
+  #toolbar { padding:4px 10px; gap:6px; min-height:36px; }
+  .vbtn    { padding:3px 8px; font-size:11px; }
+}
+.t-group { display:flex; align-items:center; gap:5px; }
+.t-sep   { width:1px; height:20px; background:#dde1e8; flex-shrink:0; }
+.t-label { font-size:11px; color:#7a8898; white-space:nowrap; }
+.vbtn {
+  background:#f2f4f7; color:#4a5a6a;
+  border:1px solid #cdd3db; border-radius:5px;
+  padding:4px 11px; font-size:12px; cursor:pointer;
+  transition:background .12s, color .12s;
+  white-space:nowrap; font-family:inherit;
+}
+.vbtn:hover  { background:#e4e8ed; color:#1e2a38; }
+.vbtn.active { background:#1e6bb8; color:#fff; border-color:#1558a0; }
+.vbtn:disabled { opacity:.5; cursor:not-allowed; }
+
+/* State chip */
+#state-chip {
+  display:flex; align-items:center; gap:6px;
+  background:#f2f4f7; border:1px solid #cdd3db;
+  border-radius:5px; padding:4px 10px;
+  font-size:11px; font-weight:600;
+  letter-spacing:.8px; text-transform:uppercase; color:#4a5a6a;
+  min-width:130px;
+}
+#state-dot {
+  width:7px; height:7px; border-radius:50%;
+  background:#cdd3db; flex-shrink:0; transition:background .3s;
+}
+#state-dot.ready  { background:#1e6bb8; }
+#state-dot.active { background:#f59e0b; }
+
+/* Thin bar */
+#prog-wrap { height:3px; background:#e4e8ed; overflow:hidden; flex-shrink:0; }
+#prog-bar  { height:100%; width:50%; background:#dc2626; transition:width .3s; }
+
+/* Canvas area */
+#wrap { flex:1; position:relative; overflow:hidden; background:#d4e2ee; }
+canvas { display:block; position:absolute; top:0; left:0; cursor:crosshair; }
+
+/* Overlay labels */
+#pane-label {
+  position:absolute; top:10px; left:13px;
+  font-size:10.5px; font-weight:600; letter-spacing:1.8px;
+  color:rgba(60,90,135,.55); pointer-events:none; z-index:6;
+}
+#hint-label {
+  position:absolute; top:10px; right:13px;
+  font-size:10.5px; font-weight:600; letter-spacing:1.2px;
+  color:rgba(60,90,135,.55); pointer-events:none; z-index:6;
+  transition:color .2s;
+}
+#hint-label.selecting { color:rgba(200,100,20,.75); }
+#help {
+  position:absolute; bottom:10px; right:12px;
+  font-size:10.5px; line-height:1.65;
+  color:rgba(60,90,130,.55); text-align:right; pointer-events:none; z-index:6;
+}
+/* ── Exercise result bar ── */
+#ex-bar {
+  display:none; position:absolute; bottom:0; left:0; width:100%;
+  background:rgba(255,255,255,.94); border-top:1px solid #dde1e8;
+  padding:9px 20px; z-index:12;
+  align-items:center; gap:14px; justify-content:center;
+  box-shadow:0 -2px 8px rgba(0,0,0,.08);
+}
+#ex-bar.visible { display:flex; }
+#ex-msg { font-size:14px; font-weight:600; color:#4a5a6a; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <div class="t-group">
+    <span style="font-size:15px;font-weight:700;color:#1e6bb8;letter-spacing:.2px">🔁 Symmetrie</span>
+  </div>
+  <div class="t-sep"></div>
+  <div class="t-group">
+    <span class="t-label">Achse:</span>
+    <button class="vbtn active" id="btn-vert"  title="Senkrechte Spiegelachse (links↔rechts)">┃ Senkrecht</button>
+    <button class="vbtn"        id="btn-horiz" title="Waagerechte Spiegelachse (oben↔unten)">━ Waagerecht</button>
+    <button class="vbtn"        id="btn-both"   title="Waagerecht + Senkrecht">╋ Kreuz</button>
+    <button class="vbtn"        id="btn-diag1"  title="Diagonale von links oben nach rechts unten">╲ Diagonal ↘</button>
+    <button class="vbtn"        id="btn-diag2"  title="Diagonale von rechts oben nach links unten">╱ Diagonal ↙</button>
+    <button class="vbtn"        id="btn-diag"   title="Beide Diagonalen">╳ Diagonal</button>
+  </div>
+  <div class="t-sep"></div>
+  <div class="t-group">
+    <span class="t-label">Zustand:</span>
+    <div id="state-chip"><div id="state-dot"></div><span id="state-text">Bereit</span></div>
+  </div>
+  <div class="t-sep"></div>
+  <div class="t-group">
+    <span class="t-label">Aktion:</span>
+    <button class="vbtn" id="btn-undo"  title="Letzte Linie rückgängig">↩ Rückgängig</button>
+    <button class="vbtn" id="btn-clear" title="Alle Linien löschen">⊘ Alles löschen</button>
+  </div>
+  <div class="t-sep"></div>
+  <div class="t-group">
+    <span class="t-label">Übung:</span>
+    <select id="ex-sel" class="t-sel">
+      <option value="none">– keine –</option>
+      <option value="mirror">Spiegelzeichnen</option>
+    </select>
+    <button class="vbtn active" id="btn-check"    style="display:none" title="Antwort überprüfen">✓ Überprüfen</button>
+    <button class="vbtn"        id="btn-new-task" style="display:none" title="Neue Aufgabe">↺ Neue Aufgabe</button>
+  </div>
+</div>
+
+<div id="prog-wrap"><div id="prog-bar"></div></div>
+
+<div id="wrap">
+  <div id="pane-label">ZEICHENFLÄCHE</div>
+  <div id="hint-label" class="">Klicke einen Punkt zum Starten</div>
+  <div id="help">Punkt wählen · weiteren Punkt wählen → Linie · gleichen Punkt nochmals → beenden</div>
+  <div id="ex-bar">
+    <span id="ex-msg"></span>
+    <button class="vbtn active" id="btn-next-task" style="padding:5px 16px">Weiter ▶</button>
+  </div>
+  <canvas id="canvas"></canvas>
+</div>
+
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════════════════
+   CONFIG
+══════════════════════════════════════════════════════════ */
+var SPACING = 44;
+var PAD     = 52;
+var MODE    = 'vertical'; // 'vertical' | 'horizontal' | 'both' | 'diag1' | 'diag2' | 'diagonal'
+
+/* Grid dimensions per mode */
+function getCols() { return (MODE === 'diagonal' || MODE === 'diag1' || MODE === 'diag2') ? 17 : 21; }
+function getRows() { return 17; }
+function getMidC() { return Math.floor(getCols() / 2); }  // 10 or 8
+function getMidR() { return Math.floor(getRows() / 2); }  // 8
+function getN()    { return getCols() - 1; }               // for diagonal: 16
+
+/* How many symmetry copies to draw (including original) */
+function getTransformCount() {
+  return (MODE === 'both' || MODE === 'diagonal') ? 4 : 2;
+  // diag1, diag2, vertical, horizontal all return 2
+}
+
+/*
+  Transform index mapping:
+    0 = identity
+    1 = primary mirror (V, H, V, diag-main)
+    2 = secondary mirror (–, –, H, diag-anti)
+    3 = combined       (–, –, V+H, 180°-rot)
+*/
+function applyT(t, c, r) {
+  var mc = getMidC(), mr = getMidR(), n = getN();
+  if (t === 0) return [c, r];
+  if (MODE === 'vertical')   { if (t === 1) return [2*mc - c, r]; }
+  if (MODE === 'horizontal') { if (t === 1) return [c, 2*mr - r]; }
+  if (MODE === 'both') {
+    if (t === 1) return [2*mc - c, r];
+    if (t === 2) return [c, 2*mr - r];
+    if (t === 3) return [2*mc - c, 2*mr - r];
+  }
+  if (MODE === 'diag1')    { if (t === 1) return [r, c]; }         // main diagonal ↘ only
+  if (MODE === 'diag2')    { if (t === 1) return [n-r, n-c]; }     // anti-diagonal ↙ only
+  if (MODE === 'diagonal') {
+    if (t === 1) return [r, c];           // mirror across main diagonal ↘
+    if (t === 2) return [n-r, n-c];       // mirror across anti-diagonal ↙
+    if (t === 3) return [n-c, n-r];       // 180° rotation (t1 ∘ t2)
+  }
+  return null;
+}
+
+/* ══════════════════════════════════════════════════════════
+   DOM
+══════════════════════════════════════════════════════════ */
+var wrap      = document.getElementById('wrap');
+var canvas    = document.getElementById('canvas');
+var ctx       = canvas.getContext('2d');
+var stateDot  = document.getElementById('state-dot');
+var stateTxt  = document.getElementById('state-text');
+var hintLabel = document.getElementById('hint-label');
+var progBar   = document.getElementById('prog-bar');
+
+var modeBtns = {
+  vertical:   document.getElementById('btn-vert'),
+  horizontal: document.getElementById('btn-horiz'),
+  both:       document.getElementById('btn-both'),
+  diag1:      document.getElementById('btn-diag1'),
+  diag2:      document.getElementById('btn-diag2'),
+  diagonal:   document.getElementById('btn-diag')
+};
+
+/* ══════════════════════════════════════════════════════════
+   PIXEL HELPERS  (grid centred in wrap)
+══════════════════════════════════════════════════════════ */
+function rawX(c) { return PAD + c * SPACING; }
+function rawY(r) { return PAD + r * SPACING; }
+
+function offX() { return Math.max(0, Math.floor((wrap.clientWidth  - (2*PAD + (getCols()-1)*SPACING)) / 2)); }
+function offY() { return Math.max(0, Math.floor((wrap.clientHeight - (2*PAD + (getRows()-1)*SPACING)) / 2)); }
+
+function px(c) { return offX() + rawX(c); }
+function py(r) { return offY() + rawY(r); }
+
+/* ══════════════════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════════════════ */
+var lines    = [];
+var selected = null;
+var hovered  = null;
+
+// Exercise state
+var EX_MODE       = 'none';  // 'none' | 'drawing' | 'checked'
+var templateLines = [];
+var checkResult   = null;    // {correct, wrong, missing} after Überprüfen
+var _exTaskIdx    = -1;
+var _switchingForEx = false; // prevents circular setMode↔stopExercise calls
+
+/* ══════════════════════════════════════════════════════════
+   STATE HELPERS
+══════════════════════════════════════════════════════════ */
+function setState(s) {
+  if (s === 'selecting') {
+    stateDot.className = 'active';
+    stateTxt.textContent = 'Punkt gewählt';
+    hintLabel.textContent = '2. Punkt wählen – ESC zum Abbrechen';
+    hintLabel.className = 'selecting';
+  } else {
+    stateDot.className = 'ready';
+    if (EX_MODE !== 'none') {
+      stateTxt.textContent = 'Am Zeichnen';
+      hintLabel.textContent = 'Spiegelbild auf der rechten Seite zeichnen';
+      hintLabel.className = '';
+    } else {
+      stateTxt.textContent = 'Bereit';
+      hintLabel.textContent = 'Klicke einen Punkt zum Starten';
+      hintLabel.className = '';
+    }
+  }
+}
+
+function setMode(m) {
+  if (!_switchingForEx && EX_MODE !== 'none') stopExercise();
+  MODE = m;
+  lines = []; selected = null; hovered = null;
+  Object.keys(modeBtns).forEach(function(k) {
+    modeBtns[k].classList.toggle('active', k === m);
+  });
+  // prog bar width gives visual hint about axis count
+  var w = {vertical:25, horizontal:25, both:50, diag1:25, diag2:25, diagonal:50};
+  progBar.style.width = (w[m] || 25) + '%';
+  setState('idle');
+  resizeCanvas();
+}
+
+/* ══════════════════════════════════════════════════════════
+   RESIZE
+══════════════════════════════════════════════════════════ */
+function resizeCanvas() {
+  canvas.width  = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  draw();
+}
+window.addEventListener('resize', resizeCanvas);
+
+/* ══════════════════════════════════════════════════════════
+   INPUT
+══════════════════════════════════════════════════════════ */
+function canvasPt(e) {
+  var r = canvas.getBoundingClientRect();
+  return [(e.clientX - r.left) * (canvas.width / r.width),
+          (e.clientY - r.top)  * (canvas.height / r.height)];
+}
+
+function snapDot(mx, my) {
+  var snap = SPACING * 0.42, best = null, bestD = Infinity;
+  var cols = getCols(), rows = getRows();
+  for (var c = 0; c < cols; c++) {
+    for (var r = 0; r < rows; r++) {
+      var d = Math.hypot(mx - px(c), my - py(r));
+      if (d < snap && d < bestD) { bestD = d; best = {col:c, row:r}; }
+    }
+  }
+  return best;
+}
+
+function same(a, b) { return a && b && a.col === b.col && a.row === b.row; }
+
+function findLine(c1, r1, c2, r2) {
+  return lines.findIndex(function(l) {
+    return (l.c1===c1&&l.r1===r1&&l.c2===c2&&l.r2===r2) ||
+           (l.c1===c2&&l.r1===r2&&l.c2===c1&&l.r2===r1);
+  });
+}
+
+canvas.addEventListener('mousemove', function(e) {
+  var pt = canvasPt(e), dot = snapDot(pt[0], pt[1]);
+  if (!same(dot, hovered)) { hovered = dot; draw(); }
+});
+canvas.addEventListener('mouseleave', function() { hovered = null; draw(); });
+
+canvas.addEventListener('click', function(e) {
+  var pt = canvasPt(e), dot = snapDot(pt[0], pt[1]);
+  if (!dot) return;
+  // Nach Überprüfen: weiterzeichnen → Check zurücksetzen
+  if (EX_MODE === 'checked') resetCheck();
+  if (!selected) { selected = dot; setState('selecting'); }
+  else if (same(dot, selected)) { selected = null; setState('idle'); }
+  else {
+    var idx = findLine(selected.col, selected.row, dot.col, dot.row);
+    if (idx >= 0) lines.splice(idx, 1);
+    else lines.push({c1:selected.col, r1:selected.row, c2:dot.col, r2:dot.row});
+    // Endpunkt wird automatisch zum neuen Startpunkt
+    selected = dot; setState('selecting');
+  }
+  draw();
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') { selected = null; setState('idle'); draw(); }
+});
+
+Object.keys(modeBtns).forEach(function(m) {
+  modeBtns[m].addEventListener('click', function() { setMode(m); });
+});
+document.getElementById('btn-undo').addEventListener('click', function() {
+  lines.pop(); selected = null; resetCheck(); setState('idle'); draw();
+});
+document.getElementById('btn-clear').addEventListener('click', function() {
+  lines = []; selected = null; resetCheck(); setState('idle'); draw();
+});
+
+/* ══════════════════════════════════════════════════════════
+   DRAWING UTILITIES
+══════════════════════════════════════════════════════════ */
+function dot(x, y, r, col) {
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+}
+
+function seg(x1, y1, x2, y2, col, lw, dash) {
+  ctx.save();
+  ctx.strokeStyle = col; ctx.lineWidth = lw || 2; ctx.lineCap = 'round';
+  ctx.setLineDash(dash || []);
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  ctx.restore();
+}
+
+/* Draw a red axis line with glow */
+function axisLine(x1, y1, x2, y2) {
+  ctx.save();
+  ctx.lineCap = 'butt'; ctx.setLineDash([]);
+  ctx.strokeStyle = 'rgba(220,38,38,.13)'; ctx.lineWidth = 14;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  ctx.restore();
+}
+
+/* Arrowhead: tip at (x,y) pointing in direction (dx,dy) */
+function arrow(x, y, dx, dy) {
+  var A = 8, len = Math.hypot(dx, dy);
+  if (len < .001) return;
+  var nx = dx/len, ny = dy/len;
+  ctx.fillStyle = '#dc2626';
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x - nx*A*1.6 + (-ny)*A, y - ny*A*1.6 + nx*A);
+  ctx.lineTo(x - nx*A*1.6 - (-ny)*A, y - ny*A*1.6 - nx*A);
+  ctx.closePath(); ctx.fill();
+}
+
+/* Extend a line to canvas edges, returns [x1,y1,x2,y2] */
+function extendToCanvas(x1, y1, x2, y2) {
+  var W = canvas.width, H = canvas.height;
+  var dx = x2-x1, dy = y2-y1;
+  var tVals = [];
+  if (Math.abs(dx) > .01) { tVals.push(-x1/dx); tVals.push((W-x1)/dx); }
+  if (Math.abs(dy) > .01) { tVals.push(-y1/dy); tVals.push((H-y1)/dy); }
+  var valid = tVals.filter(function(t) {
+    var ex = x1+t*dx, ey = y1+t*dy;
+    return ex >= -1 && ex <= W+1 && ey >= -1 && ey <= H+1;
+  });
+  if (valid.length < 2) return [x1,y1,x2,y2];
+  valid.sort(function(a,b){return a-b;});
+  return [x1+valid[0]*dx, y1+valid[0]*dy, x1+valid[valid.length-1]*dx, y1+valid[valid.length-1]*dy];
+}
+
+/* Small canvas text label near an axis */
+function axisLabel(txt, x, y, rotDeg) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (rotDeg) ctx.rotate(rotDeg * Math.PI / 180);
+  ctx.font = '700 9px "Segoe UI",system-ui,sans-serif';
+  ctx.fillStyle = 'rgba(180,30,30,.6)';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(txt, 0, 0);
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════════════════════
+   MAIN DRAW
+══════════════════════════════════════════════════════════ */
+function draw() {
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  var cols = getCols(), rows = getRows();
+  var mc = getMidC(), mr = getMidR(), n = getN();
+  var ox = offX(), oy = offY();
+  var tc = getTransformCount();
+
+  /* ── Faint grid lines ── */
+  ctx.save();
+  ctx.strokeStyle = 'rgba(155,180,200,.2)';
+  ctx.lineWidth = .7; ctx.setLineDash([]);
+  for (var c = 0; c < cols; c++) {
+    ctx.beginPath();
+    ctx.moveTo(ox+rawX(c), oy+rawY(0));
+    ctx.lineTo(ox+rawX(c), oy+rawY(rows-1));
+    ctx.stroke();
+  }
+  for (var r = 0; r < rows; r++) {
+    ctx.beginPath();
+    ctx.moveTo(ox+rawX(0),      oy+rawY(r));
+    ctx.lineTo(ox+rawX(cols-1), oy+rawY(r));
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  /* ── Dots ── */
+  for (c = 0; c < cols; c++) {
+    for (r = 0; r < rows; r++) {
+      var onAxis = false;
+      if ((MODE==='vertical'||MODE==='both') && c===mc) onAxis=true;
+      if ((MODE==='horizontal'||MODE==='both') && r===mr) onAxis=true;
+      if ((MODE==='diagonal'||MODE==='diag1') && c===r)   onAxis=true;
+      if ((MODE==='diagonal'||MODE==='diag2') && c+r===n) onAxis=true;
+      dot(px(c), py(r), 2.8, onAxis ? 'rgba(160,185,205,.5)' : 'rgba(85,115,145,.55)');
+    }
+  }
+
+  /* ── Template lines (Übungsmodus) ── */
+  if (EX_MODE !== 'none') {
+    for (var ti = 0; ti < templateLines.length; ti++) {
+      var tl = templateLines[ti];
+      seg(px(tl.c1), py(tl.r1), px(tl.c2), py(tl.r2), '#5b8cc2', 2.5);
+      dot(px(tl.c1), py(tl.r1), 4.5, '#5b8cc2');
+      dot(px(tl.c2), py(tl.r2), 4.5, '#5b8cc2');
+    }
+  }
+
+  /* ── Drawn lines (in Übung ohne Auto-Spiegel, sonst mit allen Transformationen) ── */
+  var tc = (EX_MODE !== 'none') ? 1 : getTransformCount();
+  for (var li = 0; li < lines.length; li++) {
+    var l = lines[li];
+    var lc = '#1e6bb8';
+    if (checkResult) {
+      if (checkResult.correct.some(function(x){return linesMatch(x,l);})) lc = '#22c55e';
+      else if (checkResult.wrong.some(function(x){return linesMatch(x,l);}))  lc = '#ef4444';
+    }
+    for (var t = 0; t < tc; t++) {
+      var p1 = applyT(t, l.c1, l.r1);
+      var p2 = applyT(t, l.c2, l.r2);
+      if (!p1 || !p2) continue;
+      seg(px(p1[0]), py(p1[1]), px(p2[0]), py(p2[1]), lc, 2.5);
+      dot(px(p1[0]), py(p1[1]), 4, lc);
+      dot(px(p2[0]), py(p2[1]), 4, lc);
+    }
+  }
+
+  /* ── Fehlende Linien nach Überprüfen (gestrichelt rot) ── */
+  if (checkResult) {
+    for (var mi2 = 0; mi2 < checkResult.missing.length; mi2++) {
+      var ml = checkResult.missing[mi2];
+      seg(px(ml.c1), py(ml.r1), px(ml.c2), py(ml.r2), 'rgba(239,68,68,.5)', 2, [6,3]);
+      dot(px(ml.c1), py(ml.r1), 4, 'rgba(239,68,68,.45)');
+      dot(px(ml.c2), py(ml.r2), 4, 'rgba(239,68,68,.45)');
+    }
+  }
+
+  /* ── Hover highlight ── */
+  if (hovered && !same(hovered, selected)) {
+    dot(px(hovered.col), py(hovered.row), 6.5, 'rgba(30,107,184,.22)');
+    for (t = 1; t < tc; t++) {
+      var hp = applyT(t, hovered.col, hovered.row);
+      if (hp) dot(px(hp[0]), py(hp[1]), 6.5, 'rgba(30,107,184,.1)');
+    }
+  }
+
+  /* ── Selected dot + mirror ghosts + preview ── */
+  if (selected) {
+    var sx = px(selected.col), sy = py(selected.row);
+    ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(sx, sy, 9, 0, Math.PI*2); ctx.stroke();
+    dot(sx, sy, 5.5, '#f59e0b');
+
+    for (t = 1; t < tc; t++) {
+      var sp = applyT(t, selected.col, selected.row);
+      if (!sp) continue;
+      var smx = px(sp[0]), smy = py(sp[1]);
+      ctx.strokeStyle = 'rgba(245,158,11,.35)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(smx, smy, 9, 0, Math.PI*2); ctx.stroke();
+      dot(smx, smy, 5.5, 'rgba(245,158,11,.35)');
+    }
+
+    if (hovered && !same(hovered, selected)) {
+      for (t = 0; t < tc; t++) {
+        var fp1 = applyT(t, selected.col, selected.row);
+        var fp2 = applyT(t, hovered.col,  hovered.row);
+        if (!fp1 || !fp2) continue;
+        seg(px(fp1[0]), py(fp1[1]), px(fp2[0]), py(fp2[1]),
+            t===0 ? 'rgba(30,107,184,.38)' : 'rgba(30,107,184,.22)', 2, [6,4]);
+      }
+    }
+  }
+
+  /* ══ AXES (drawn last, always on top) ══ */
+
+  if (MODE === 'vertical' || MODE === 'both') {
+    var ax = px(mc);
+    var ext = extendToCanvas(ax, 0, ax, H);
+    axisLine(ext[0], ext[1], ext[2], ext[3]);
+    arrow(ext[0], ext[1], 0, -1);
+    arrow(ext[2], ext[3], 0,  1);
+    axisLabel('SPIEGELACHSE', ax, oy + rawY(0) - 18, 0);
+  }
+
+  if (MODE === 'horizontal' || MODE === 'both') {
+    var ay = py(mr);
+    var exth = extendToCanvas(0, ay, W, ay);
+    axisLine(exth[0], exth[1], exth[2], exth[3]);
+    arrow(exth[0], exth[1], -1, 0);
+    arrow(exth[2], exth[3],  1, 0);
+    if (MODE === 'horizontal') {
+      axisLabel('SPIEGELACHSE', ox + rawX(0) - 22, ay, -90);
+    } else {
+      // 'both': second label below the first
+      axisLabel('SPIEGELACHSE', ax, ay + 14, 0);
+    }
+  }
+
+  if (MODE === 'diagonal' || MODE === 'diag1' || MODE === 'diag2') {
+    var g0x = px(0), g0y = py(0);
+    var gNx = px(n), gNy = py(n);
+    var cx2 = (g0x+gNx)/2, cy2 = (g0y+gNy)/2;
+
+    if (MODE === 'diagonal' || MODE === 'diag1') {
+      // Main diagonal ↘
+      var em = extendToCanvas(g0x, g0y, gNx, gNy);
+      axisLine(em[0], em[1], em[2], em[3]);
+      var dm = [em[2]-em[0], em[3]-em[1]];
+      arrow(em[0], em[1], -dm[0], -dm[1]);
+      arrow(em[2], em[3],  dm[0],  dm[1]);
+      axisLabel('SPIEGELACHSE', cx2 - 22, cy2 - 22, -45);
+    }
+
+    if (MODE === 'diagonal' || MODE === 'diag2') {
+      // Anti-diagonal ↙
+      var ea = extendToCanvas(gNx, g0y, g0x, gNy);
+      axisLine(ea[0], ea[1], ea[2], ea[3]);
+      var da = [ea[2]-ea[0], ea[3]-ea[1]];
+      arrow(ea[0], ea[1], -da[0], -da[1]);
+      arrow(ea[2], ea[3],  da[0],  da[1]);
+      axisLabel('SPIEGELACHSE', cx2 + 22, cy2 - 22, 45);
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   EXERCISE – SPIEGELZEICHNEN
+══════════════════════════════════════════════════════════ */
+
+// Vorlagen für senkrechte Achse: alle Punkte links (col < midC = 10)
+var MIRROR_TASKS = [
+  // 1. Haus
+  [{c1:3,r1:13,c2:9,r2:13},{c1:3,r1:13,c2:3,r2:8},{c1:9,r1:13,c2:9,r2:8},
+   {c1:3,r1:8, c2:6,r2:4}, {c1:6,r1:4, c2:9,r2:8}],
+  // 2. Pfeil nach links
+  [{c1:9,r1:8,c2:3,r2:8},{c1:3,r1:8,c2:6,r2:5},{c1:3,r1:8,c2:6,r2:11}],
+  // 3. Treppe
+  [{c1:3,r1:12,c2:3,r2:10},{c1:3,r1:10,c2:5,r2:10},{c1:5,r1:10,c2:5,r2:8},
+   {c1:5,r1:8, c2:7,r2:8}, {c1:7,r1:8, c2:7,r2:6},{c1:7,r1:6,c2:9,r2:6}],
+  // 4. Fahne
+  [{c1:3,r1:4,c2:3,r2:13},{c1:3,r1:4,c2:9,r2:6},{c1:9,r1:6,c2:3,r2:8}],
+  // 5. Buchstabe L
+  [{c1:3,r1:4,c2:3,r2:12},{c1:3,r1:12,c2:8,r2:12}],
+  // 6. Raute
+  [{c1:6,r1:3,c2:9,r2:8},{c1:9,r1:8,c2:6,r2:13},{c1:6,r1:13,c2:3,r2:8},{c1:3,r1:8,c2:6,r2:3}],
+  // 7. Zickzack
+  [{c1:3,r1:4,c2:7,r2:8},{c1:7,r1:8,c2:3,r2:12},{c1:3,r1:12,c2:7,r2:16}],
+  // 8. Fenster
+  [{c1:2,r1:4,c2:9,r2:4},{c1:2,r1:4,c2:2,r2:12},{c1:9,r1:4,c2:9,r2:12},
+   {c1:2,r1:12,c2:9,r2:12},{c1:5,r1:4,c2:5,r2:12},{c1:2,r1:8,c2:9,r2:8}],
+  // 9. Blitz
+  [{c1:7,r1:3,c2:4,r2:8},{c1:4,r1:8,c2:8,r2:8},{c1:8,r1:8,c2:3,r2:14}],
+  // 10. Buchstabe T
+  [{c1:2,r1:5,c2:9,r2:5},{c1:5,r1:5,c2:5,r2:12}],
+];
+
+function linesMatch(a, b) {
+  return (a.c1===b.c1 && a.r1===b.r1 && a.c2===b.c2 && a.r2===b.r2) ||
+         (a.c1===b.c2 && a.r1===b.r2 && a.c2===b.c1 && a.r2===b.r1);
+}
+
+function resetCheck() {
+  if (checkResult) {
+    checkResult = null;
+    EX_MODE = 'drawing';
+    document.getElementById('btn-check').disabled = false;
+    document.getElementById('ex-bar').classList.remove('visible');
+  }
+}
+
+function stopExercise() {
+  EX_MODE = 'none'; templateLines = []; checkResult = null; _exTaskIdx = -1;
+  lines = []; selected = null;
+  document.getElementById('btn-check').style.display    = 'none';
+  document.getElementById('btn-new-task').style.display = 'none';
+  document.getElementById('ex-bar').classList.remove('visible');
+  setState('idle'); draw();
+}
+
+function startMirrorExercise() {
+  // Senkrecht-Modus erzwingen (ohne Exercise zu stoppen)
+  if (MODE !== 'vertical') {
+    _switchingForEx = true;
+    setMode('vertical');
+    _switchingForEx = false;
+  }
+  EX_MODE = 'drawing'; checkResult = null; lines = []; selected = null;
+  // Zufällige neue Aufgabe
+  var idx = _exTaskIdx;
+  while (idx === _exTaskIdx) idx = Math.floor(Math.random() * MIRROR_TASKS.length);
+  _exTaskIdx = idx;
+  templateLines = MIRROR_TASKS[idx].map(function(l) {
+    return {c1:l.c1, r1:l.r1, c2:l.c2, r2:l.r2};
+  });
+  document.getElementById('btn-check').style.display    = '';
+  document.getElementById('btn-new-task').style.display = '';
+  document.getElementById('btn-check').disabled = false;
+  document.getElementById('ex-bar').classList.remove('visible');
+  setState('idle'); draw();
+}
+
+function checkMirrorExercise() {
+  if (EX_MODE !== 'drawing') return;
+  if (lines.length === 0) {
+    var bar = document.getElementById('ex-bar');
+    document.getElementById('ex-msg').textContent = 'Noch keine Linien gezeichnet – zeichne zuerst das Spiegelbild!';
+    document.getElementById('ex-msg').style.color = '#7a8898';
+    document.getElementById('btn-next-task').style.display = 'none';
+    bar.classList.add('visible'); return;
+  }
+  EX_MODE = 'checked';
+  // Erwartetes Spiegelbild = Transformation t=1 jeder Vorlagelinie
+  var expected = templateLines.map(function(l) {
+    var p1 = applyT(1, l.c1, l.r1), p2 = applyT(1, l.c2, l.r2);
+    return {c1:p1[0], r1:p1[1], c2:p2[0], r2:p2[1]};
+  });
+  var correct = [], wrong = [], missing = [];
+  lines.forEach(function(pl) {
+    if (expected.some(function(el){ return linesMatch(pl, el); })) correct.push(pl);
+    else wrong.push(pl);
+  });
+  expected.forEach(function(el) {
+    if (!lines.some(function(pl){ return linesMatch(pl, el); })) missing.push(el);
+  });
+  checkResult = {correct:correct, wrong:wrong, missing:missing};
+  // Ergebnis anzeigen
+  var bar = document.getElementById('ex-bar');
+  var msg = document.getElementById('ex-msg');
+  var total = expected.length;
+  document.getElementById('btn-next-task').style.display = '';
+  if (missing.length === 0 && wrong.length === 0) {
+    msg.textContent = '🎉 Perfekt! Alle ' + total + ' Linien richtig gespiegelt!';
+    msg.style.color = '#16a34a';
+  } else {
+    var parts = [correct.length + ' von ' + total + ' richtig'];
+    if (wrong.length   > 0) parts.push(wrong.length   + ' falsch (rot)');
+    if (missing.length > 0) parts.push(missing.length + ' fehlend (gestrichelt)');
+    msg.textContent = parts.join(' · ');
+    msg.style.color = '#dc2626';
+  }
+  bar.classList.add('visible');
+  document.getElementById('btn-check').disabled = true;
+  draw();
+}
+
+document.getElementById('ex-sel').addEventListener('change', function() {
+  if (this.value === 'mirror') startMirrorExercise();
+  else stopExercise();
+});
+document.getElementById('btn-check').addEventListener('click', checkMirrorExercise);
+document.getElementById('btn-new-task').addEventListener('click', function() {
+  startMirrorExercise();
+});
+document.getElementById('btn-next-task').addEventListener('click', function() {
+  startMirrorExercise();
+  document.getElementById('ex-sel').value = 'mirror';
+});
+
+/* ══════════════════════════════════════════════════════════
+   INIT
+══════════════════════════════════════════════════════════ */
+setMode('vertical');
+</script>
+</body>
+</html>
