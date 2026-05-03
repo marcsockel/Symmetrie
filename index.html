@@ -8,18 +8,15 @@
 * { margin:0; padding:0; box-sizing:border-box; }
 
 html {
-  overflow:hidden; height:100%;
-  height: -webkit-fill-available; /* iOS Safari: echte verfügbare Höhe */
+  overflow:hidden; height:100%; height:100dvh;
   touch-action:none;
 }
 body {
   background:#eef0f3; color:#2c3540;
   font-family:'Segoe UI',system-ui,sans-serif;
-  height:100%; min-height:-webkit-fill-available;
+  height:100%; height:100dvh;
   display:flex; flex-direction:column;
   overflow:hidden; user-select:none; touch-action:none;
-  /* Safe Area für iPhone-Notch / iPad-Statusleiste */
-  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* ── Toolbar ── */
@@ -95,7 +92,6 @@ canvas { display:block; position:absolute; top:0; left:0; cursor:crosshair; }
   display:none; position:absolute; bottom:0; left:0; width:100%;
   background:rgba(255,255,255,.94); border-top:1px solid #dde1e8;
   padding:9px 20px;
-  padding-bottom: max(9px, env(safe-area-inset-bottom));
   z-index:12;
   align-items:center; gap:14px; justify-content:center;
   box-shadow:0 -2px 8px rgba(0,0,0,.08);
