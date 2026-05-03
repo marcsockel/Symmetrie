@@ -128,6 +128,7 @@ canvas { display:block; position:absolute; top:0; left:0; cursor:crosshair; }
     <select id="ex-sel" class="t-sel">
       <option value="none">– keine –</option>
       <option value="mirror">Spiegelzeichnen</option>
+      <option value="findAxis">Achse finden</option>
     </select>
     <button class="vbtn active" id="btn-check"    style="display:none" title="Antwort überprüfen">✓ Überprüfen</button>
     <button class="vbtn"        id="btn-new-task" style="display:none" title="Neue Aufgabe">↺ Neue Aufgabe</button>
@@ -158,7 +159,10 @@ var PAD     = 52;
 var MODE    = 'vertical'; // 'vertical' | 'horizontal' | 'both' | 'diag1' | 'diag2' | 'diagonal'
 
 /* Grid dimensions per mode */
-function getCols() { return (MODE === 'diagonal' || MODE === 'diag1' || MODE === 'diag2') ? 17 : 21; }
+function getCols() {
+  if (EX_TYPE === 'findAxis') return 17;
+  return (MODE === 'diagonal' || MODE === 'diag1' || MODE === 'diag2') ? 17 : 21;
+}
 function getRows() { return 17; }
 function getMidC() { return Math.floor(getCols() / 2); }  // 10 or 8
 function getMidR() { return Math.floor(getRows() / 2); }  // 8
@@ -242,6 +246,39 @@ var templateLines = [];
 var checkResult   = null;    // {correct, wrong, missing} after Überprüfen
 var _exTaskIdx    = -1;
 var _switchingForEx = false; // prevents circular setMode↔stopExercise calls
+var EX_TYPE = 'none'; // 'none' | 'mirror' | 'findAxis'
+
+/* ══════════════════════════════════════════════════════════
+   AXIS TASKS – "Achse finden"
+   All figures on a 17×17 grid (cols 0-16, rows 0-16)
+   Center: col=8, row=8
+══════════════════════════════════════════════════════════ */
+var AXIS_TASKS = [
+  // 1. Dreieck (isosceles) – 1 axis: vertical
+  { lines: [{c1:8,r1:2,c2:2,r2:14},{c1:8,r1:2,c2:14,r2:14},{c1:2,r1:14,c2:14,r2:14}],
+    axes: ['vertical'] },
+  // 2. Rechteck (centered rectangle) – 2 axes: vertical + horizontal
+  { lines: [{c1:3,r1:5,c2:13,r2:5},{c1:13,r1:5,c2:13,r2:11},{c1:13,r1:11,c2:3,r2:11},{c1:3,r1:11,c2:3,r2:5}],
+    axes: ['vertical','horizontal'] },
+  // 3. Raute (diamond) – 4 axes: all
+  { lines: [{c1:8,r1:2,c2:14,r2:8},{c1:14,r1:8,c2:8,r2:14},{c1:8,r1:14,c2:2,r2:8},{c1:2,r1:8,c2:8,r2:2}],
+    axes: ['vertical','horizontal','diag1','diag2'] },
+  // 4. Pfeil nach oben – 1 axis: vertical
+  { lines: [{c1:8,r1:3,c2:3,r2:9},{c1:8,r1:3,c2:13,r2:9},{c1:3,r1:9,c2:3,r2:13},{c1:13,r1:9,c2:13,r2:13},{c1:3,r1:13,c2:13,r2:13}],
+    axes: ['vertical'] },
+  // 5. Haus – 1 axis: vertical
+  { lines: [{c1:3,r1:8,c2:8,r2:3},{c1:8,r1:3,c2:13,r2:8},{c1:3,r1:8,c2:3,r2:14},{c1:13,r1:8,c2:13,r2:14},{c1:3,r1:14,c2:13,r2:14}],
+    axes: ['vertical'] },
+  // 6. Chevron ">" – 1 axis: horizontal
+  { lines: [{c1:3,r1:3,c2:13,r2:8},{c1:13,r1:8,c2:3,r2:13}],
+    axes: ['horizontal'] },
+  // 7. H-Form – 2 axes: vertical + horizontal
+  { lines: [{c1:3,r1:3,c2:3,r2:13},{c1:13,r1:3,c2:13,r2:13},{c1:3,r1:8,c2:13,r2:8}],
+    axes: ['vertical','horizontal'] },
+  // 8. Dreieck links "<" (left-pointing triangle) – 1 axis: horizontal
+  { lines: [{c1:3,r1:8,c2:13,r2:3},{c1:13,r1:3,c2:13,r2:13},{c1:13,r1:13,c2:3,r2:8}],
+    axes: ['horizontal'] }
+];
 
 /* ══════════════════════════════════════════════════════════
    STATE HELPERS
@@ -254,7 +291,11 @@ function setState(s) {
     hintLabel.className = 'selecting';
   } else {
     stateDot.className = 'ready';
-    if (EX_MODE !== 'none') {
+    if (EX_TYPE === 'findAxis') {
+      stateTxt.textContent = 'Am Zeichnen';
+      hintLabel.textContent = 'Zeichne die Symmetrieachse(n) ein';
+      hintLabel.className = '';
+    } else if (EX_MODE !== 'none') {
       stateTxt.textContent = 'Am Zeichnen';
       hintLabel.textContent = 'Spiegelbild auf der rechten Seite zeichnen';
       hintLabel.className = '';
@@ -337,8 +378,13 @@ canvas.addEventListener('click', function(e) {
     var idx = findLine(selected.col, selected.row, dot.col, dot.row);
     if (idx >= 0) lines.splice(idx, 1);
     else lines.push({c1:selected.col, r1:selected.row, c2:dot.col, r2:dot.row});
-    // Endpunkt wird automatisch zum neuen Startpunkt
-    selected = dot; setState('selecting');
+    if (EX_TYPE === 'findAxis') {
+      // No chaining in "Achse finden" – reset so player starts fresh for next axis
+      selected = null; setState('idle');
+    } else {
+      // Endpunkt wird automatisch zum neuen Startpunkt
+      selected = dot; setState('selecting');
+    }
   }
   draw();
 });
@@ -373,23 +419,26 @@ function seg(x1, y1, x2, y2, col, lw, dash) {
   ctx.restore();
 }
 
-/* Draw a red axis line with glow */
-function axisLine(x1, y1, x2, y2) {
+/* Draw an axis line with glow; col defaults to red */
+function axisLine(x1, y1, x2, y2, col) {
+  col = col || '#dc2626';
+  var glowMap = {'#dc2626':'rgba(220,38,38,.13)','#22c55e':'rgba(34,197,94,.15)','#ef4444':'rgba(239,68,68,.15)'};
+  var glow = glowMap[col] || 'rgba(0,0,0,.1)';
   ctx.save();
   ctx.lineCap = 'butt'; ctx.setLineDash([]);
-  ctx.strokeStyle = 'rgba(220,38,38,.13)'; ctx.lineWidth = 14;
+  ctx.strokeStyle = glow; ctx.lineWidth = 14;
   ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
-  ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 3;
+  ctx.strokeStyle = col; ctx.lineWidth = 3;
   ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
   ctx.restore();
 }
 
 /* Arrowhead: tip at (x,y) pointing in direction (dx,dy) */
-function arrow(x, y, dx, dy) {
+function arrow(x, y, dx, dy, col) {
   var A = 8, len = Math.hypot(dx, dy);
   if (len < .001) return;
   var nx = dx/len, ny = dy/len;
-  ctx.fillStyle = '#dc2626';
+  ctx.fillStyle = col || '#dc2626';
   ctx.beginPath();
   ctx.moveTo(x, y);
   ctx.lineTo(x - nx*A*1.6 + (-ny)*A, y - ny*A*1.6 + nx*A);
@@ -435,7 +484,8 @@ function draw() {
   var cols = getCols(), rows = getRows();
   var mc = getMidC(), mr = getMidR(), n = getN();
   var ox = offX(), oy = offY();
-  var tc = getTransformCount();
+  // In findAxis exercise suppress mirror ghosts (would reveal the axis)
+  var tc = (EX_TYPE === 'findAxis') ? 1 : getTransformCount();
 
   /* ── Faint grid lines ── */
   ctx.save();
@@ -459,10 +509,12 @@ function draw() {
   for (c = 0; c < cols; c++) {
     for (r = 0; r < rows; r++) {
       var onAxis = false;
-      if ((MODE==='vertical'||MODE==='both') && c===mc) onAxis=true;
-      if ((MODE==='horizontal'||MODE==='both') && r===mr) onAxis=true;
-      if ((MODE==='diagonal'||MODE==='diag1') && c===r)   onAxis=true;
-      if ((MODE==='diagonal'||MODE==='diag2') && c+r===n) onAxis=true;
+      if (EX_TYPE !== 'findAxis') {
+        if ((MODE==='vertical'||MODE==='both') && c===mc) onAxis=true;
+        if ((MODE==='horizontal'||MODE==='both') && r===mr) onAxis=true;
+        if ((MODE==='diagonal'||MODE==='diag1') && c===r)   onAxis=true;
+        if ((MODE==='diagonal'||MODE==='diag2') && c+r===n) onAxis=true;
+      }
       dot(px(c), py(r), 2.8, onAxis ? 'rgba(160,185,205,.5)' : 'rgba(85,115,145,.55)');
     }
   }
@@ -477,32 +529,55 @@ function draw() {
     }
   }
 
-  /* ── Drawn lines (in Übung ohne Auto-Spiegel, sonst mit allen Transformationen) ── */
-  var tc = (EX_MODE !== 'none') ? 1 : getTransformCount();
-  for (var li = 0; li < lines.length; li++) {
-    var l = lines[li];
-    var lc = '#1e6bb8';
-    if (checkResult) {
-      if (checkResult.correct.some(function(x){return linesMatch(x,l);})) lc = '#22c55e';
-      else if (checkResult.wrong.some(function(x){return linesMatch(x,l);}))  lc = '#ef4444';
+  /* ── Drawn lines ── */
+  if (EX_TYPE === 'findAxis') {
+    /* In "Achse finden": player lines are drawn as full extended axis lines */
+    for (var li = 0; li < lines.length; li++) {
+      var l = lines[li];
+      var axCol = '#dc2626'; // candidate (red) before check
+      if (checkResult) {
+        if (checkResult.correct.some(function(x){return linesMatch(x,l);})) axCol = '#22c55e';
+        else axCol = '#ef4444';
+      }
+      var exl = extendToCanvas(px(l.c1), py(l.r1), px(l.c2), py(l.r2));
+      axisLine(exl[0], exl[1], exl[2], exl[3], axCol);
     }
-    for (var t = 0; t < tc; t++) {
-      var p1 = applyT(t, l.c1, l.r1);
-      var p2 = applyT(t, l.c2, l.r2);
-      if (!p1 || !p2) continue;
-      seg(px(p1[0]), py(p1[1]), px(p2[0]), py(p2[1]), lc, 2.5);
-      dot(px(p1[0]), py(p1[1]), 4, lc);
-      dot(px(p2[0]), py(p2[1]), 4, lc);
+    /* Missing axes after check (dashed green) */
+    if (checkResult && checkResult.missingAxes) {
+      for (var mi3 = 0; mi3 < checkResult.missingAxes.length; mi3++) {
+        var ref = getAxisRefLine(checkResult.missingAxes[mi3]);
+        if (!ref) continue;
+        var exm = extendToCanvas(px(ref.c1), py(ref.r1), px(ref.c2), py(ref.r2));
+        seg(exm[0], exm[1], exm[2], exm[3], 'rgba(22,163,74,.65)', 2.5, [8,4]);
+      }
     }
-  }
-
-  /* ── Fehlende Linien nach Überprüfen (gestrichelt rot) ── */
-  if (checkResult) {
-    for (var mi2 = 0; mi2 < checkResult.missing.length; mi2++) {
-      var ml = checkResult.missing[mi2];
-      seg(px(ml.c1), py(ml.r1), px(ml.c2), py(ml.r2), 'rgba(239,68,68,.5)', 2, [6,3]);
-      dot(px(ml.c1), py(ml.r1), 4, 'rgba(239,68,68,.45)');
-      dot(px(ml.c2), py(ml.r2), 4, 'rgba(239,68,68,.45)');
+  } else {
+    /* Mirror mode and free drawing: with transforms */
+    var tc = (EX_MODE !== 'none') ? 1 : getTransformCount();
+    for (var li = 0; li < lines.length; li++) {
+      var l = lines[li];
+      var lc = '#1e6bb8';
+      if (checkResult) {
+        if (checkResult.correct.some(function(x){return linesMatch(x,l);})) lc = '#22c55e';
+        else if (checkResult.wrong.some(function(x){return linesMatch(x,l);}))  lc = '#ef4444';
+      }
+      for (var t = 0; t < tc; t++) {
+        var p1 = applyT(t, l.c1, l.r1);
+        var p2 = applyT(t, l.c2, l.r2);
+        if (!p1 || !p2) continue;
+        seg(px(p1[0]), py(p1[1]), px(p2[0]), py(p2[1]), lc, 2.5);
+        dot(px(p1[0]), py(p1[1]), 4, lc);
+        dot(px(p2[0]), py(p2[1]), 4, lc);
+      }
+    }
+    /* Fehlende Linien nach Überprüfen (gestrichelt rot) */
+    if (checkResult && checkResult.missing) {
+      for (var mi2 = 0; mi2 < checkResult.missing.length; mi2++) {
+        var ml = checkResult.missing[mi2];
+        seg(px(ml.c1), py(ml.r1), px(ml.c2), py(ml.r2), 'rgba(239,68,68,.5)', 2, [6,3]);
+        dot(px(ml.c1), py(ml.r1), 4, 'rgba(239,68,68,.45)');
+        dot(px(ml.c2), py(ml.r2), 4, 'rgba(239,68,68,.45)');
+      }
     }
   }
 
@@ -543,6 +618,8 @@ function draw() {
   }
 
   /* ══ AXES (drawn last, always on top) ══ */
+  /* In findAxis exercise the axes are hidden – that's what the player must find */
+  if (EX_TYPE === 'findAxis') return;
 
   if (MODE === 'vertical' || MODE === 'both') {
     var ax = px(mc);
@@ -630,6 +707,44 @@ function linesMatch(a, b) {
          (a.c1===b.c2 && a.r1===b.r2 && a.c2===b.c1 && a.r2===b.r1);
 }
 
+/* Classify a player-drawn line as a symmetry axis type */
+function getAxisType(line) {
+  var dc = line.c2 - line.c1, dr = line.r2 - line.r1;
+  if (dc === 0)        return {type:'vertical',   val:line.c1};       // same column
+  if (dr === 0)        return {type:'horizontal',  val:line.r1};       // same row
+  if (dc === dr)       return {type:'diag1',       val:line.c1-line.r1}; // c–r constant
+  if (dc === -dr)      return {type:'diag2',       val:line.c1+line.r1}; // c+r constant
+  return {type:'other'};
+}
+
+/* Does a classified axis match one of the task's named correct axes?
+   For a 17×17 grid: vertical→col=8, horizontal→row=8, diag1→c-r=0, diag2→c+r=16 */
+function axisMatchesTaskAxis(axisType, taskAxisName) {
+  if (taskAxisName === 'vertical'   && axisType.type === 'vertical'   && axisType.val === 8)  return true;
+  if (taskAxisName === 'horizontal' && axisType.type === 'horizontal' && axisType.val === 8)  return true;
+  if (taskAxisName === 'diag1'      && axisType.type === 'diag1'      && axisType.val === 0)  return true;
+  if (taskAxisName === 'diag2'      && axisType.type === 'diag2'      && axisType.val === 16) return true;
+  return false;
+}
+
+/* Return a canonical two-point line for a named axis (on 17×17 grid) */
+function getAxisRefLine(axisName) {
+  if (axisName === 'vertical')   return {c1:8,  r1:0,  c2:8,  r2:16};
+  if (axisName === 'horizontal') return {c1:0,  r1:8,  c2:16, r2:8};
+  if (axisName === 'diag1')      return {c1:0,  r1:0,  c2:16, r2:16};
+  if (axisName === 'diag2')      return {c1:16, r1:0,  c2:0,  r2:16};
+  return null;
+}
+
+/* Human-readable name for a task axis */
+function axisLabel2(axisName) {
+  if (axisName === 'vertical')   return 'senkrecht';
+  if (axisName === 'horizontal') return 'waagerecht';
+  if (axisName === 'diag1')      return 'diagonal ↘';
+  if (axisName === 'diag2')      return 'diagonal ↙';
+  return axisName;
+}
+
 function resetCheck() {
   if (checkResult) {
     checkResult = null;
@@ -640,7 +755,7 @@ function resetCheck() {
 }
 
 function stopExercise() {
-  EX_MODE = 'none'; templateLines = []; checkResult = null; _exTaskIdx = -1;
+  EX_MODE = 'none'; EX_TYPE = 'none'; templateLines = []; checkResult = null; _exTaskIdx = -1;
   lines = []; selected = null;
   document.getElementById('btn-check').style.display    = 'none';
   document.getElementById('btn-new-task').style.display = 'none';
@@ -649,6 +764,7 @@ function stopExercise() {
 }
 
 function startMirrorExercise() {
+  EX_TYPE = 'mirror';
   // Senkrecht-Modus erzwingen (ohne Exercise zu stoppen)
   if (MODE !== 'vertical') {
     _switchingForEx = true;
@@ -714,17 +830,103 @@ function checkMirrorExercise() {
   draw();
 }
 
+/* ══════════════════════════════════════════════════════════
+   EXERCISE – ACHSE FINDEN
+══════════════════════════════════════════════════════════ */
+
+function startAxisExercise() {
+  EX_TYPE = 'findAxis';
+  EX_MODE = 'drawing'; checkResult = null; lines = []; selected = null;
+  // Pick a different task each time
+  var idx = _exTaskIdx;
+  while (AXIS_TASKS.length > 1 && idx === _exTaskIdx)
+    idx = Math.floor(Math.random() * AXIS_TASKS.length);
+  _exTaskIdx = idx;
+  templateLines = AXIS_TASKS[idx].lines.map(function(l) {
+    return {c1:l.c1, r1:l.r1, c2:l.c2, r2:l.r2};
+  });
+  document.getElementById('btn-check').style.display    = '';
+  document.getElementById('btn-new-task').style.display = '';
+  document.getElementById('btn-check').disabled = false;
+  document.getElementById('ex-bar').classList.remove('visible');
+  setState('idle'); resizeCanvas();
+}
+
+function checkAxisExercise() {
+  if (EX_MODE !== 'drawing') return;
+  if (lines.length === 0) {
+    var bar0 = document.getElementById('ex-bar');
+    document.getElementById('ex-msg').textContent = 'Noch keine Achse gezeichnet – zeichne zuerst die Symmetrieachse!';
+    document.getElementById('ex-msg').style.color = '#7a8898';
+    document.getElementById('btn-next-task').style.display = 'none';
+    bar0.classList.add('visible'); return;
+  }
+  EX_MODE = 'checked';
+  var task = AXIS_TASKS[_exTaskIdx];
+  var correctAxes = task.axes.slice(); // e.g. ['vertical','horizontal']
+
+  var matchedCorrect = [], wrongLines = [], foundAxes = [];
+  lines.forEach(function(pl) {
+    var at = getAxisType(pl);
+    var hit = null;
+    for (var i = 0; i < correctAxes.length; i++) {
+      if (foundAxes.indexOf(correctAxes[i]) < 0 && axisMatchesTaskAxis(at, correctAxes[i])) {
+        hit = correctAxes[i]; break;
+      }
+    }
+    if (hit) { matchedCorrect.push(pl); foundAxes.push(hit); }
+    else wrongLines.push(pl);
+  });
+
+  var missingAxes = correctAxes.filter(function(ca) { return foundAxes.indexOf(ca) < 0; });
+
+  checkResult = {correct: matchedCorrect, wrong: wrongLines, missing: [], missingAxes: missingAxes};
+
+  var bar = document.getElementById('ex-bar');
+  var msg = document.getElementById('ex-msg');
+  document.getElementById('btn-next-task').style.display = '';
+  var total = correctAxes.length;
+
+  if (missingAxes.length === 0 && wrongLines.length === 0) {
+    msg.textContent = '🎉 Richtig! ' + (total === 1 ? 'Die Achse' : 'Alle ' + total + ' Achsen') + ' gefunden!';
+    msg.style.color = '#16a34a';
+  } else {
+    var parts = [matchedCorrect.length + ' von ' + total + ' Achsen richtig'];
+    if (wrongLines.length  > 0) parts.push(wrongLines.length  + ' falsch (rot)');
+    if (missingAxes.length > 0) {
+      var names = missingAxes.map(axisLabel2).join(', ');
+      parts.push('fehlend: ' + names + ' (gestrichelt)');
+    }
+    msg.textContent = parts.join(' · ');
+    msg.style.color = '#dc2626';
+  }
+  bar.classList.add('visible');
+  document.getElementById('btn-check').disabled = true;
+  draw();
+}
+
 document.getElementById('ex-sel').addEventListener('change', function() {
-  if (this.value === 'mirror') startMirrorExercise();
+  if (this.value === 'mirror')    startMirrorExercise();
+  else if (this.value === 'findAxis') startAxisExercise();
   else stopExercise();
 });
-document.getElementById('btn-check').addEventListener('click', checkMirrorExercise);
+document.getElementById('btn-check').addEventListener('click', function() {
+  if (EX_TYPE === 'mirror')    checkMirrorExercise();
+  else if (EX_TYPE === 'findAxis') checkAxisExercise();
+});
 document.getElementById('btn-new-task').addEventListener('click', function() {
-  startMirrorExercise();
+  if (EX_TYPE === 'mirror')    startMirrorExercise();
+  else if (EX_TYPE === 'findAxis') startAxisExercise();
 });
 document.getElementById('btn-next-task').addEventListener('click', function() {
-  startMirrorExercise();
-  document.getElementById('ex-sel').value = 'mirror';
+  var sel = document.getElementById('ex-sel');
+  if (EX_TYPE === 'mirror') {
+    startMirrorExercise();
+    sel.value = 'mirror';
+  } else if (EX_TYPE === 'findAxis') {
+    startAxisExercise();
+    sel.value = 'findAxis';
+  }
 });
 
 /* ══════════════════════════════════════════════════════════
